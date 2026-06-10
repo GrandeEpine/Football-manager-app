@@ -1,2 +1,2 @@
-name,team_count,match_count,generated
-Mon Tournoi,8,28,True
+name,team_count,match_count,generated,phase,teams_per_group,teams_to_qualify
+My Tournament,0,0,False,group,4,3
