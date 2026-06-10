@@ -763,8 +763,8 @@ class TournamentApp:
     # TEAM FUNCTIONS
     # =========================================================================
 
-    def add_team_dialog(self):
-        """Add a team"""
+    def add_team_dialog(self, chain_add=True):
+        """Add a team. If chain_add=True, keeps asking for more teams."""
         team_name = simpledialog.askstring("Add Team", "Team name:")
         if team_name and team_name.strip():
             team_name = team_name.strip()
@@ -772,8 +772,14 @@ class TournamentApp:
                 self.update_all()
                 self.setup_groups_display()
                 self.status_bar.config(text=f"Team '{team_name}' added")
+                # Chain add: open dialog again for next team
+                if chain_add:
+                    self.add_team_dialog(chain_add=True)
             else:
                 messagebox.showerror("Error", f"Team already exists!")
+                # Continue chaining even if duplicate
+                if chain_add:
+                    self.add_team_dialog(chain_add=True)
 
     def remove_selected_team(self):
         """Remove a team"""
