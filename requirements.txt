@@ -1,0 +1,16 @@
+# Football Tournament Organizer - Dependencies
+# ==============================================
+
+# Python standard library modules used:
+# csv, os, tkinter, datetime, dataclasses, typing, random
+
+# System dependencies (Linux - Debian/Ubuntu):
+# sudo apt-get install python3-tk
+
+# System dependencies (Linux - Fedora/RHEL):
+# sudo dnf install python3-tkinter
+
+# System dependencies (Linux - Arch):
+# sudo pacman -S tk
+
+# No pip packages required
