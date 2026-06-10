@@ -1,6 +1,9 @@
 # Football Tournament Organizer
 
 A desktop application to manage football tournaments with groups and knockout stages.
+## Author
+- GrandeEpine (https://github.com/GrandeEpine)
+- I was a member of the organisation for Daiko futsall tournament in June 2026, enjoy my work ! (ofc its vibe coded)
 
 ## Features
 
