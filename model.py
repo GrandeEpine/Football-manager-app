@@ -44,6 +44,21 @@ class Team:
             self.points += 1
         else:
             self.lost += 1
+
+    def remove_result(self, goals_for: int, goals_against: int, is_win: bool, is_draw: bool):
+        """Annule les stats d'un match"""
+        self.goals_for -= goals_for
+        self.goals_against -= goals_against
+        self.played -= 1
+
+        if is_win:
+            self.won -= 1
+            self.points -= 3
+        elif is_draw:
+            self.draw -= 1
+            self.points -= 1
+        else:
+            self.lost -= 1
     
     def reset_stats(self):
         """Réinitialise les statistiques"""
@@ -119,7 +134,7 @@ class Tournament:
     GROUP_COLORS = [Colors.GROUP_A, Colors.GROUP_B, Colors.GROUP_C, Colors.GROUP_D, 
                    Colors.GROUP_E, Colors.GROUP_F, Colors.GROUP_G, Colors.GROUP_H]
     
-    def __init__(self, name: str = "Mon Tournoi"):
+    def __init__(self, name: str = "My Tournament"):
         self.name = name
         self.teams: Dict[str, Team] = {}
         self.matches: List[Match] = []
@@ -127,7 +142,7 @@ class Tournament:
         self.generated_matches: bool = False
         self.phase: str = "group"
         self.teams_per_group: int = 4
-        self.teams_to_qualify: int = 3
+        self.teams_to_qualify: int = 4
         self.knockout_matches: List[Match] = []
     
     def add_team(self, team_name: str, group: Optional[str] = None) -> bool:
@@ -142,7 +157,11 @@ class Tournament:
     
     def remove_team(self, team_name: str) -> bool:
         """Supprime une équipe"""
-        if team_name in self.teams:
+        print(self.teams.keys())
+        print(type(team_name), team_name)
+        print([type(k) for k in self.teams.keys()])
+        if team_name in list(self.teams.keys()):
+            print("is in self.teams")
             self.matches = [m for m in self.matches 
                           if m.team1 != team_name and m.team2 != team_name]
             self.knockout_matches = [m for m in self.knockout_matches
@@ -169,7 +188,7 @@ class Tournament:
             group_name = chr(65 + len(self.groups))
             group_color = self.GROUP_COLORS[len(self.groups) % len(self.GROUP_COLORS)]
             
-            group = Group(name=f"Groupe {group_name}", teams=group_teams, color=group_color)
+            group = Group(name=f"Group {group_name}", teams=group_teams, color=group_color)
             self.groups.append(group)
             
             for team_name in group_teams:
@@ -235,14 +254,14 @@ class Tournament:
                         team2=team_names[j],
                         group=group.name,
                         phase="group",
-                        round_name=f"Phase de groupes - {group.name}"
+                        round_name=f"Group Stage - {group.name}"
                     )
                     self.matches.append(match)
         
         self.generated_matches = True
         return self.matches
     
-    def advance_from_groups(self, teams_to_qualify: int = 3) -> List[str]:
+    def advance_from_groups(self, teams_to_qualify: int = 4) -> List[str]:
         """Fait avancer les meilleures équipes de chaque groupe"""
         self.teams_to_qualify = teams_to_qualify
         qualified_teams = []
@@ -263,36 +282,68 @@ class Tournament:
         
         return qualified_teams
     
+    @staticmethod
+    def _build_bracket_order(size: int) -> List[int]:
+        if size <= 1:
+            return [1]
+
+        previous = Tournament._build_bracket_order(size // 2)
+        order: List[int] = []
+        for position in previous:
+            order.append(position)
+            order.append(size + 1 - position)
+        return order
+
+    @staticmethod
+    def _get_knockout_round_name(team_count: int) -> str:
+        if team_count <= 2:
+            return "Final"
+        if team_count <= 4:
+            return "Semi-finals"
+        if team_count <= 8:
+            return "Quarter-finals"
+        return f"Round of {team_count}"
+
     def generate_knockout_matches(self):
-        """Génère les matchs de la phase finale"""
-        qualified_teams = [t.name for t in self.teams.values() if t.qualified]
-        
-        if len(qualified_teams) < 2:
+        """Generate knockout stage matches"""
+        seeded_teams: List[str] = []
+
+        if self.groups:
+            for group in self.groups:
+                group_standings = self.get_group_standings(group.name)
+                seeded_teams.extend(team.name for team in group_standings[: self.teams_to_qualify])
+        else:
+            seeded_teams = [team.name for team in self.get_standings() if team.qualified]
+
+        if len(seeded_teams) < 2:
             return []
-        
+
         self.knockout_matches = []
-        random.shuffle(qualified_teams)
-        
-        for i in range(0, len(qualified_teams), 2):
-            if i + 1 < len(qualified_teams):
-                if len(qualified_teams) == 2:
-                    round_name = "Finale"
-                elif len(qualified_teams) == 4:
-                    round_name = "Demi-finale"
-                elif len(qualified_teams) <= 8:
-                    round_name = "Quart de finale"
-                else:
-                    round_name = "Huitième de finale"
-                
-                match = Match(
-                    team1=qualified_teams[i],
-                    team2=qualified_teams[i + 1],
+        bracket_size = 1
+        while bracket_size < len(seeded_teams):
+            bracket_size *= 2
+
+        bracket_order = self._build_bracket_order(bracket_size)
+        bracket_slots: List[Optional[str]] = seeded_teams + [None] * (bracket_size - len(seeded_teams))
+        ordered_teams = [bracket_slots[index - 1] for index in bracket_order]
+        round_name = self._get_knockout_round_name(bracket_size)
+
+        for i in range(0, len(ordered_teams), 2):
+            team1 = ordered_teams[i]
+            team2 = ordered_teams[i + 1]
+            if not team1 or not team2:
+                continue
+
+            self.knockout_matches.append(
+                Match(
+                    team1=team1,
+                    team2=team2,
                     group=None,
                     phase="knockout",
-                    round_name=round_name
+                    round_name=round_name,
                 )
-                self.knockout_matches.append(match)
-        
+            )
+
         return self.knockout_matches
     
     def get_all_matches(self) -> List[Match]:
@@ -317,7 +368,9 @@ class Tournament:
     
     def record_match_result(self, match: Match, score1: int, score2: int) -> bool:
         """Enregistre le résultat d'un match et met à jour les équipes"""
+        print(match)
         if match.team1 not in self.teams or match.team2 not in self.teams:
+            print('team issue')
             return False
         
         match.score1 = score1
@@ -331,6 +384,28 @@ class Tournament:
         self.teams[match.team1].add_result(score1, score2, is_win_team1, is_draw)
         self.teams[match.team2].add_result(score2, score1, not is_win_team1 and not is_draw, is_draw)
         
+        return True
+
+    def clear_match_result(self, match: Match) -> bool:
+        """Remove a recorded match result from team statistics"""
+        if (
+            match.team1 not in self.teams
+            or match.team2 not in self.teams
+            or match.score1 is None
+            or match.score2 is None
+            or not match.played
+        ):
+            return False
+
+        is_win_team1 = match.score1 > match.score2
+        is_draw = match.score1 == match.score2
+
+        self.teams[match.team1].remove_result(match.score1, match.score2, is_win_team1, is_draw)
+        self.teams[match.team2].remove_result(match.score2, match.score1, not is_win_team1 and not is_draw, is_draw)
+
+        match.score1 = None
+        match.score2 = None
+        match.played = False
         return True
     
     def get_standings(self) -> List[Team]:

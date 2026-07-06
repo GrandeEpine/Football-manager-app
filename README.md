@@ -103,4 +103,4 @@ football/
 - Uses only Python standard library
 - Data is saved in CSV format for easy editing
 - Groups support up to 4 teams each (configurable in code)
-- Top 3 teams from each group qualify by default
+- All teams from each four-team group qualify by default

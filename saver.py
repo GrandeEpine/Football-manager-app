@@ -105,7 +105,7 @@ class TournamentSaver:
             
             return True
         except Exception as e:
-            print(f"Erreur lors de la sauvegarde: {e}")
+            print(f"Save error: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -137,7 +137,7 @@ class TournamentSaver:
                     if len(row) > 5:
                         tournament.teams_per_group = int(row[5]) if row[5] else 4
                     if len(row) > 6:
-                        tournament.teams_to_qualify = int(row[6]) if row[6] else 3
+                        tournament.teams_to_qualify = int(row[6]) if row[6] else 4
             
             # Charger les équipes
             with open(TournamentSaver.TEAMS_FILE, 'r', encoding='utf-8') as f:
@@ -215,7 +215,7 @@ class TournamentSaver:
             return tournament
             
         except Exception as e:
-            print(f"Erreur lors du chargement: {e}")
+            print(f"Load error: {e}")
             import traceback
             traceback.print_exc()
             return None

@@ -20,6 +20,9 @@ class TournamentApp:
         self.root = root
         self.tournament = Tournament()
         self.search_vars: Dict = {}
+        self.active_matches_tree = None
+        self.match_item_map: Dict[str, Match] = {}
+        self.knockout_item_map: Dict[str, Match] = {}
 
         self.setup_ui()
         self.load_data()
@@ -112,6 +115,7 @@ class TournamentApp:
         # Team menu
         team_menu = tk.Menu(menubar, tearoff=0, bg=Colors.BG_DARK, fg=Colors.FG_TEXT)
         team_menu.add_command(label="Add Team", command=self.add_team_dialog)
+        team_menu.add_command(label="Delete Selected Team", command=self.remove_selected_team)
         team_menu.add_command(label="Generate Matches", command=self.generate_classic_matches)
         menubar.add_cascade(label="Teams", menu=team_menu)
 
@@ -179,6 +183,33 @@ class TournamentApp:
                 tags.append('draw')
 
         return tuple(tags)
+
+    def _set_active_matches_tree(self, tree):
+        """Remember the last match table used by the user"""
+        self.active_matches_tree = tree
+
+    def _get_selected_match_tree(self):
+        """Return the treeview that currently owns the selection"""
+        if self.active_matches_tree is not None and self.active_matches_tree.selection():
+            return self.active_matches_tree
+        if self.matches_tree.selection():
+            return self.matches_tree
+        if self.knockout_tree.selection():
+            return self.knockout_tree
+        return None
+
+    def _get_match_from_tree_selection(self, tree):
+        """Resolve the selected tree row to the underlying match object"""
+        selected = tree.selection()
+        if not selected:
+            return None
+
+        item_id = selected[0]
+        if tree == self.matches_tree:
+            return self.match_item_map.get(item_id)
+        if tree == self.knockout_tree:
+            return self.knockout_item_map.get(item_id)
+        return None
 
     # =========================================================================
     # TABS SETUP
@@ -268,6 +299,8 @@ class TournamentApp:
         self.matches_tree.column('result', width=100)
         self.matches_tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.configure_treeview_tags(self.matches_tree)
+        self.matches_tree.bind("<<TreeviewSelect>>", lambda e: self._set_active_matches_tree(self.matches_tree))
+        self.matches_tree.bind("<Double-1>", lambda e: self.enter_result_dialog())
 
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.matches_tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -303,6 +336,8 @@ class TournamentApp:
         self.knockout_tree.column('team2', anchor=tk.W, width=120)
         self.knockout_tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.configure_treeview_tags(self.knockout_tree)
+        self.knockout_tree.bind("<<TreeviewSelect>>", lambda e: self._set_active_matches_tree(self.knockout_tree))
+        self.knockout_tree.bind("<Double-1>", lambda e: self.enter_result_dialog())
 
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.knockout_tree.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -484,6 +519,10 @@ class TournamentApp:
         """Generate knockout stage"""
         if not self.tournament.groups:
             messagebox.showwarning("Warning", "Create groups first!")
+            return
+
+        if self.tournament.knockout_matches:
+            messagebox.showinfo("Info", "Knockout matches are already generated.")
             return
 
         unplayed = [m for m in self.tournament.matches if not m.played]
@@ -763,9 +802,9 @@ class TournamentApp:
     # TEAM FUNCTIONS
     # =========================================================================
 
-    def add_team_dialog(self, chain_add=True):
+    def add_team_dialog(self, chain_add=False):
         """Add a team. If chain_add=True, keeps asking for more teams."""
-        team_name = simpledialog.askstring("Add Team", "Team name:")
+        team_name = str(simpledialog.askstring("Add Team", "Team name:"))
         if team_name and team_name.strip():
             team_name = team_name.strip()
             if self.tournament.add_team(team_name):
@@ -787,8 +826,7 @@ class TournamentApp:
         if not selected:
             messagebox.showwarning("Warning", "No team selected!")
             return
-
-        team_name = self.teams_tree.item(selected[0])["values"][0]
+        team_name = str(self.teams_tree.item(selected[0])["values"][0])
         confirm = messagebox.askyesno("Confirm", f"Remove '{team_name}'?")
         if confirm:
             if self.tournament.remove_team(team_name):
@@ -864,6 +902,9 @@ class TournamentApp:
 
     def generate_classic_matches(self):
         """Generate classic matches (no groups)"""
+        if self.tournament.matches:
+            messagebox.showinfo("Info", "Matches are already generated.")
+            return
         self.tournament.clear_groups()
         self.tournament.phase = "group"
         self.tournament.generate_matches()
@@ -876,22 +917,21 @@ class TournamentApp:
         all_matches = self.tournament.get_all_matches()
         unplayed = [m for m in all_matches if not m.played]
 
-        selected = self.matches_tree.selection() or self.knockout_tree.selection()
         match = None
 
-        if selected:
-            tree = (
-                self.matches_tree
-                if self.matches_tree.selection()
-                else self.knockout_tree
-            )
-            values = tree.item(selected[0])["values"]
-            for m in all_matches:
-                if (m.team1 == values[0] and m.team2 == values[1]) or (
-                    m.team1 == values[1] and m.team2 == values[0]
-                ):
-                    match = m
-                    break
+        tree = self._get_selected_match_tree()
+        if tree is not None:
+            match = self._get_match_from_tree_selection(tree)
+            if match is None:
+                selected = tree.selection()
+                values = tree.item(selected[0])["values"]
+                for m in all_matches:
+                    if str(m.team1) == str(values[0]) and str(m.team2) == str(values[1]):
+                        match = m
+                        break
+                    if str(m.team1) == str(values[1]) and str(m.team2) == str(values[0]):
+                        match = m
+                        break
         elif unplayed:
             match = unplayed[0]
         else:
@@ -973,9 +1013,7 @@ class TournamentApp:
                     and match.score1 is not None
                     and match.score2 is not None
                 ):
-                    self.tournament.record_match_result(
-                        match, -match.score1, -match.score2
-                    )
+                    self.tournament.clear_match_result(match)
 
                 self.tournament.record_match_result(match, score1, score2)
                 self.update_all()
@@ -1000,31 +1038,31 @@ class TournamentApp:
 
     def remove_selected_match(self):
         """Remove a match"""
-        selected = self.matches_tree.selection() or self.knockout_tree.selection()
-        if not selected:
+        tree = self._get_selected_match_tree()
+        if tree is None:
             messagebox.showwarning("Warning", "No match selected!")
             return
 
-        tree = (
-            self.matches_tree if self.matches_tree.selection() else self.knockout_tree
-        )
-        values = tree.item(selected[0])["values"]
+        match_to_remove = self._get_match_from_tree_selection(tree)
+        values = tree.item(tree.selection()[0])["values"]
 
         all_matches = self.tournament.matches + self.tournament.knockout_matches
-        match_to_remove = None
         match_list = None
 
-        for m in all_matches:
-            if (m.team1 == values[0] and m.team2 == values[1]) or (
-                m.team1 == values[1] and m.team2 == values[0]
-            ):
-                match_to_remove = m
-                match_list = (
-                    self.tournament.matches
-                    if m in self.tournament.matches
-                    else self.tournament.knockout_matches
-                )
-                break
+        if match_to_remove is None:
+            for m in all_matches:
+                if (str(m.team1) == str(values[0]) and str(m.team2) == str(values[1])) or (
+                    str(m.team1) == str(values[1]) and str(m.team2) == str(values[0])
+                ):
+                    match_to_remove = m
+                    break
+
+        if match_to_remove is not None:
+            match_list = (
+                self.tournament.matches
+                if match_to_remove in self.tournament.matches
+                else self.tournament.knockout_matches
+            )
 
         if (
             match_to_remove
@@ -1036,9 +1074,7 @@ class TournamentApp:
                 and match_to_remove.score1 is not None
                 and match_to_remove.score2 is not None
             ):
-                self.tournament.record_match_result(
-                    match_to_remove, -match_to_remove.score1, -match_to_remove.score2
-                )
+                self.tournament.clear_match_result(match_to_remove)
             match_list.remove(match_to_remove)
             self.update_all()
             self.status_bar.config(text="Match removed")
@@ -1252,12 +1288,13 @@ class TournamentApp:
         """Update matches display"""
         for item in self.matches_tree.get_children():
             self.matches_tree.delete(item)
+        self.match_item_map = {}
         for match in sorted(
             self.tournament.get_all_matches(),
             key=lambda m: (m.phase != "group", not m.played, m.date),
         ):
             score = f"{match.score1}-{match.score2}" if match.is_complete else "-"
-            self.matches_tree.insert(
+            item_id = self.matches_tree.insert(
                 "",
                 "end",
                 values=(
@@ -1272,6 +1309,7 @@ class TournamentApp:
                 ),
                 tags=self.get_match_tags(match),
             )
+            self.match_item_map[item_id] = match
         unplayed = len(self.tournament.get_unplayed_matches())
         played = len(self.tournament.get_played_matches())
         self.matches_info.config(
@@ -1284,11 +1322,12 @@ class TournamentApp:
         """Update knockout matches display"""
         for item in self.knockout_tree.get_children():
             self.knockout_tree.delete(item)
+        self.knockout_item_map = {}
         for match in sorted(
             self.tournament.knockout_matches, key=lambda m: (not m.played, m.date)
         ):
             score = f"{match.score1}-{match.score2}" if match.is_complete else "-"
-            self.knockout_tree.insert(
+            item_id = self.knockout_tree.insert(
                 "",
                 "end",
                 values=(
@@ -1302,6 +1341,7 @@ class TournamentApp:
                 ),
                 tags=self.get_match_tags(match),
             )
+            self.knockout_item_map[item_id] = match
         qualified = len([t for t in self.tournament.teams.values() if t.qualified])
         self.knockout_info.config(
             text=f"Qualified: {qualified}", bg=Colors.BG_DARK, fg=Colors.FG_TEXT
