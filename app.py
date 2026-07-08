@@ -121,7 +121,7 @@ class TournamentApp:
 
         # Group menu
         group_menu = tk.Menu(menubar, tearoff=0, bg=Colors.BG_DARK, fg=Colors.FG_TEXT)
-        group_menu.add_command(label="Create Groups (4)", command=self.create_groups_4)
+        group_menu.add_command(label="Create Groups", command=self.create_groups)
         group_menu.add_command(label="Manual Groups", command=self.create_groups_manual)
         group_menu.add_command(label="Generate Knockout", command=self.generate_knockout_stage)
         menubar.add_cascade(label="Groups", menu=group_menu)
@@ -259,8 +259,8 @@ class TournamentApp:
         btn_frame = tk.Frame(frame, bg=Colors.BG_DARK)
         btn_frame.pack(fill=tk.X, padx=10, pady=10)
 
-        tk.Button(btn_frame, text="Create Groups (4)", 
-                 command=self.create_groups_4, **self.get_btn_style()).pack(side=tk.LEFT, padx=5)
+        tk.Button(btn_frame, text="Create Groups", 
+                 command=self.create_groups, **self.get_btn_style()).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="Manual Groups", 
                  command=self.create_groups_manual, **self.get_btn_style()).pack(side=tk.LEFT, padx=5)
         tk.Button(btn_frame, text="Clear Groups", 
@@ -425,13 +425,21 @@ class TournamentApp:
     # GROUP FUNCTIONS
     # =========================================================================
 
-    def create_groups_4(self):
-        """Create groups of 4 teams"""
-        if len(self.tournament.teams) < 4:
-            messagebox.showwarning("Warning", "You need at least 4 teams!")
+    def create_groups(self):
+        """Create groups with customizable team count per group"""
+        if len(self.tournament.teams) < 2:
+            messagebox.showwarning("Warning", "You need at least 2 teams!")
             return
+        
+        teams_per_group = simpledialog.askinteger(
+            "Create Groups", "Teams per group:",
+            minvalue=2, maxvalue=len(self.tournament.teams), initialvalue=4
+        )
+        if not teams_per_group:
+            return
+        
         self.tournament.clear_groups()
-        self.tournament.create_groups(4)
+        self.tournament.create_groups(teams_per_group)
         self.tournament.generate_group_matches()
         self.setup_groups_display()
         self.update_all()
@@ -453,7 +461,7 @@ class TournamentApp:
 
         if not self.tournament.groups:
             tk.Label(self.groups_container, 
-                    text="No groups. Use 'Create Groups (4)' or 'Manual Groups' first",
+                    text="No groups. Use 'Create Groups' or 'Manual Groups' first",
                     bg=Colors.BG_DARK, fg=Colors.FG_TEXT, 
                     font=('Arial', 12)).pack(pady=40)
             return
@@ -533,7 +541,20 @@ class TournamentApp:
             if not confirm:
                 return
 
-        self.tournament.advance_from_groups(self.tournament.teams_to_qualify)
+        # Ask user how many teams to qualify from each group
+        max_possible = max(len(group.teams) for group in self.tournament.groups) if self.tournament.groups else 4
+        teams_to_qualify = simpledialog.askinteger(
+            "Knockout Stage", 
+            f"Teams to qualify from each group (max per group: {max_possible}):",
+            minvalue=1, 
+            maxvalue=max_possible,
+            initialvalue=min(self.tournament.teams_to_qualify, max_possible)
+        )
+        if not teams_to_qualify:
+            return
+        
+        self.tournament.teams_to_qualify = teams_to_qualify
+        self.tournament.advance_from_groups(teams_to_qualify)
         self.tournament.generate_knockout_matches()
         self.tournament.phase = "knockout"
 
@@ -543,8 +564,8 @@ class TournamentApp:
 
     def create_groups_manual(self):
         """Create groups manually with custom team selection"""
-        if len(self.tournament.teams) < 4:
-            messagebox.showwarning("Warning", "You need at least 4 teams!")
+        if len(self.tournament.teams) < 2:
+            messagebox.showwarning("Warning", "You need at least 2 teams!")
             return
 
         num_groups = simpledialog.askinteger(
@@ -699,16 +720,6 @@ class TournamentApp:
                     unassigned.append(team_name)
                 else:
                     group_counts[group_name] = group_counts.get(group_name, 0) + 1
-
-            # Check limits
-            max_per_group = 4
-            for group_name, count in group_counts.items():
-                if count > max_per_group:
-                    messagebox.showwarning(
-                        "Warning",
-                        f"Group {group_name} has {count} teams. Maximum is {max_per_group} per group!"
-                    )
-                    return
 
             # Check if all teams are assigned
             if unassigned:
